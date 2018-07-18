@@ -89,7 +89,8 @@ def cycle_update(src_name, version=LATEST, max_cycles=10):
                     cycle = False
             count += 1
             if count >= max_cycles:
-                logging.warning("Reach max updating cycle (%s), now aborting process" % count)
+                logging.warning("Reach max updating cycle (%s), now aborting process. " % count + \
+                                "You may want to run another cycle to make sure biothings data is up-to-date")
                 cycle = False
 
     return asyncio.ensure_future(do(version))
