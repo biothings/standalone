@@ -8,22 +8,36 @@ import concurrent.futures
 import multiprocessing_on_dill
 concurrent.futures.process.multiprocessing = multiprocessing_on_dill
 
-import sys
+import sys, os
 try:
-    apipath = sys.argv[1]
     # workking dir in api folder
+    apipath = sys.argv[1]
     sys.path.insert(0,apipath)
+    # also add standalone path (= bin/..)
+    autohubdir,_ = os.path.split(os.path.dirname(os.path.realpath(__file__)))
+    sys.path.insert(0,autohubdir)
 except IndexError:
     sys.exit("Provide folder path to API (containing config file)")
+
 
 import asyncio, asyncssh, sys, os
 from functools import partial
 from collections import OrderedDict
+import logging
+
 
 import config, biothings
+from utils.versions import set_versions
+
+# fill app & autohub versions
+autohub_folder,_bin = os.path.split(os.path.dirname(os.path.realpath(__file__)))
+assert _bin == "bin", "Expecting 'bin' to be part of launch script path"
+app_folder,_src = os.path.split(os.path.abspath(apipath))
+assert _src == "src", "Expecting 'src' to be part of app path"
+set_versions(config,autohub_folder,app_folder)
+
 biothings.config_for_app(config)
 
-import logging
 # shut some mouths...
 logging.getLogger("elasticsearch").setLevel(logging.ERROR)
 logging.getLogger("urllib3").setLevel(logging.ERROR)
