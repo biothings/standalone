@@ -30,11 +30,11 @@ import config, biothings
 from utils.versions import set_versions
 
 # fill app & autohub versions
-autohub_folder,_bin = os.path.split(os.path.dirname(os.path.realpath(__file__)))
+standalone_folder,_bin = os.path.split(os.path.dirname(os.path.realpath(__file__)))
 assert _bin == "bin", "Expecting 'bin' to be part of launch script path"
 app_folder,_src = os.path.split(os.path.abspath(apipath))
 assert _src == "src", "Expecting 'src' to be part of app path"
-set_versions(config,autohub_folder,app_folder)
+set_versions(config,standalone_folder,app_folder)
 
 biothings.config_for_app(config)
 
