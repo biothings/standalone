@@ -42,6 +42,8 @@ biothings.config_for_app(config)
 logging.getLogger("elasticsearch").setLevel(logging.ERROR)
 logging.getLogger("urllib3").setLevel(logging.ERROR)
 logging.getLogger("requests").setLevel(logging.ERROR)
+import botocore
+logging.getLogger("botocore").setLevel(logging.ERROR)
 
 logging.info("Hub DB backend: %s" % biothings.config.HUB_DB_BACKEND)
 logging.info("Hub database: %s" % biothings.config.DATA_HUB_DB_DATABASE)
@@ -127,7 +129,7 @@ settings = {'debug': True}
 #app = get_api_app(managers=managers,shell=shell,settings=settings)
 
 
-from biothings.hub.autoupdate import BiothingsDumper, BiothingsUploader
+from biothings.hub.autoupdate import BiothingsDumper, BiothingsUploader 
 from biothings.utils.es import ESIndexer
 from biothings.utils.backend import DocESBackend
 from biothings.utils.hub import schedule, pending, done, CompositeCommand
@@ -159,6 +161,8 @@ for s3_folder in s3_folders:
         SRC_NAME = BiothingsDumper.SRC_NAME + suffix
         SRC_ROOT_FOLDER = os.path.join(config.DATA_ARCHIVE_ROOT, SRC_NAME)
         BIOTHINGS_S3_FOLDER = s3_folder
+        AWS_ACCESS_KEY_ID = config.STANDALONE_AWS_CREDENTIALS.get("AWS_ACCESS_KEY_ID")
+        AWS_SECRET_ACCESS_KEY = config.STANDALONE_AWS_CREDENTIALS.get("AWS_SECRET_ACCESS_KEY")
     dmanager.register_classes([dumper_klass])
     # dump commands
     cmdsuffix = suffix.replace("demo_","")
