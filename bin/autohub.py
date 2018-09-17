@@ -8,6 +8,7 @@ import concurrent.futures
 import multiprocessing_on_dill
 concurrent.futures.process.multiprocessing = multiprocessing_on_dill
 
+
 import sys, os
 try:
     # workking dir in api folder
@@ -25,9 +26,8 @@ from functools import partial
 from collections import OrderedDict
 import logging
 
-
 import config, biothings
-from utils.versions import set_versions
+from versions import set_versions
 
 # fill app & autohub versions
 standalone_folder,_bin = os.path.split(os.path.dirname(os.path.realpath(__file__)))
@@ -50,9 +50,9 @@ logging.info("Hub database: %s" % biothings.config.DATA_HUB_DB_DATABASE)
 
 from biothings.utils.manager import JobManager
 loop = asyncio.get_event_loop()
-job_manager = JobManager(loop,num_workers=config.HUB_MAX_WORKERS,
-                      num_threads=config.HUB_MAX_THREADS,
-                      max_memory_usage=config.HUB_MAX_MEM_USAGE)
+job_manager = JobManager(loop,num_workers=biothings.config.HUB_MAX_WORKERS,
+                      num_threads=biothings.config.HUB_MAX_THREADS,
+                      max_memory_usage=biothings.config.HUB_MAX_MEM_USAGE)
 
 import biothings.hub.dataload.uploader as uploader
 import biothings.hub.dataload.dumper as dumper
@@ -60,7 +60,12 @@ import biothings.hub.databuild.syncer as syncer
 import biothings.hub.dataindex.indexer as indexer
 
 syncer_manager = syncer.SyncerManager(job_manager=job_manager)
-syncer_manager.configure()
+if hasattr(biothings.config,"SYNCER_CLASSES"):
+    syncer_classes = biothings.config.SYNCER_CLASSES
+    logging.info("Using custom syncer: %s" % syncer_classes)
+else:
+    syncer_classes = None
+syncer_manager.configure(klasses=syncer_classes)
 
 dmanager = dumper.DumperManager(job_manager=job_manager)
 dmanager.schedule_all()
@@ -141,7 +146,7 @@ from biothings.utils.hub import schedule, pending, done, CompositeCommand
 
 COMMANDS = OrderedDict()
 
-s3_folders = config.BIOTHINGS_S3_FOLDER.split(",")
+s3_folders = biothings.config.BIOTHINGS_S3_FOLDER.split(",")
 for s3_folder in s3_folders:
 
     BiothingsDumper.BIOTHINGS_S3_FOLDER = s3_folder
@@ -151,18 +156,19 @@ for s3_folder in s3_folders:
         # as a convention, use the s3_folder's suffix to complete index name
         # TODO: really ? maybe be more explicit ??
         suffix = "_%s" % s3_folder.split("-")[-1]
-    pidxr = partial(ESIndexer,index=config.ES_INDEX_NAME + suffix,
-                    doc_type=config.ES_DOC_TYPE,es_host=config.ES_HOST)
+    pidxr = partial(ESIndexer,index=biothings.config.ES_INDEX_NAME + suffix,
+                    doc_type=biothings.config.ES_DOC_TYPE,
+                    es_host=biothings.config.ES_HOST)
     partial_backend = partial(DocESBackend,pidxr)
 
     # dumper
     class dumper_klass(BiothingsDumper):
         TARGET_BACKEND = partial_backend
         SRC_NAME = BiothingsDumper.SRC_NAME + suffix
-        SRC_ROOT_FOLDER = os.path.join(config.DATA_ARCHIVE_ROOT, SRC_NAME)
+        SRC_ROOT_FOLDER = os.path.join(biothings.config.DATA_ARCHIVE_ROOT, SRC_NAME)
         BIOTHINGS_S3_FOLDER = s3_folder
-        AWS_ACCESS_KEY_ID = config.STANDALONE_AWS_CREDENTIALS.get("AWS_ACCESS_KEY_ID")
-        AWS_SECRET_ACCESS_KEY = config.STANDALONE_AWS_CREDENTIALS.get("AWS_SECRET_ACCESS_KEY")
+        AWS_ACCESS_KEY_ID = biothings.config.STANDALONE_AWS_CREDENTIALS.get("AWS_ACCESS_KEY_ID")
+        AWS_SECRET_ACCESS_KEY = biothings.config.STANDALONE_AWS_CREDENTIALS.get("AWS_SECRET_ACCESS_KEY")
     dmanager.register_classes([dumper_klass])
     # dump commands
     cmdsuffix = suffix.replace("demo_","")
@@ -173,7 +179,7 @@ for s3_folder in s3_folders:
 
     # uploader
     # syncer will work on index used in web part
-    esb = (config.ES_HOST, config.ES_INDEX_NAME + suffix, config.ES_DOC_TYPE)
+    esb = (biothings.config.ES_HOST, biothings.config.ES_INDEX_NAME + suffix, biothings.config.ES_DOC_TYPE)
     partial_syncer = partial(syncer_manager.sync,"es",target_backend=esb)
     # manually register biothings source uploader
     # this uploader will use dumped data to update an ES index
@@ -211,7 +217,7 @@ EXTRA_NS = {
     "done" : done
     }
 
-passwords = hasattr(config,"HUB_PASSWD") and config.HUB_PASSWD or {
+passwords = hasattr(biothings.config,"HUB_PASSWD") and biothings.config.HUB_PASSWD or {
         'guest': '9RKfd8gDuNf0Q', # guest account with no password
         }
 
@@ -226,7 +232,7 @@ passwords = hasattr(config,"HUB_PASSWD") and config.HUB_PASSWD or {
 
 shell.set_commands(COMMANDS,EXTRA_NS)
 server = start_server(loop, "Auto-hub",passwords=passwords,
-                      shell=shell, port=config.HUB_SSH_PORT)
+                      shell=shell, port=biothings.config.HUB_SSH_PORT)
 
 try:
     loop.run_until_complete(server)
