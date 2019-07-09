@@ -117,7 +117,7 @@ def cycle_update(src_name, version=LATEST, max_cycles=10):
     return asyncio.ensure_future(do(version))
 
 # shell shared between SSH console and web API
-from biothings.utils.hub import start_server, HubShell
+from biothings.utils.hub import HubShell
 shell = HubShell(job_manager)
 
 # assemble resources that need to be propagated to REST API
@@ -137,7 +137,31 @@ settings = {'debug': True}
 from biothings.hub.autoupdate import BiothingsDumper, BiothingsUploader 
 from biothings.utils.es import ESIndexer
 from biothings.utils.backend import DocESBackend
-from biothings.utils.hub import schedule, pending, done, CompositeCommand
+# back-compat
+from biothings.utils.hub import pending, CompositeCommand
+try:
+    # biothings 0.2.1
+    from biothings.utils.hub import schedule, done
+    from biothings.utils.hub import start_server
+except ImportError:
+    # biothings 0.2.2, 0.2.3
+    from biothings.hub import schedule
+    done = "done"
+
+    from biothings.hub import HubSSHServer, HUB_REFRESH_COMMANDS
+    import aiocron
+    @asyncio.coroutine
+    def start_server(loop,name,passwords,keys=['bin/ssh_host_key'],shell=None,
+                     host='',port=8022):
+        for key in keys:
+            assert os.path.exists(key),"Missing key '%s' (use: 'ssh-keygen -f %s' to generate it" % (key,key)
+        HubSSHServer.PASSWORDS = passwords
+        HubSSHServer.NAME = name
+        HubSSHServer.SHELL = shell
+        cron = aiocron.crontab(HUB_REFRESH_COMMANDS,func=shell.__class__.refresh_commands,
+                               start=True, loop=loop)
+        yield from asyncssh.create_server(HubSSHServer, host, port, loop=loop,
+                                     server_host_keys=keys)
 
 
 # Generate dumper, uploader classes dynamically according
