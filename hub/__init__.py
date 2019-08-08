@@ -14,7 +14,7 @@ from biothings.hub import HubServer
 
 class AutoHubServer(HubServer):
 
-    DEFAULT_FEATURES = ["job","dump","upload","sync"]
+    DEFAULT_FEATURES = ["job","dump","upload","sync","terminal","ws"]
 
     def __init__(self, s3_folders, *args, **kwargs):
         super().__init__(*args, **kwargs)

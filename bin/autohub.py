@@ -21,28 +21,29 @@ try:
     # workking dir in api folder
     apipath = sys.argv[1]
     sys.path.insert(0,apipath)
-    # also add standalone path (= bin/..)
-    autohubdir,_ = os.path.split(os.path.dirname(os.path.realpath(__file__)))
-    sys.path.insert(0,autohubdir)
+    # also add folder containoing standalone path so we can
+    # "import standalone.*"
+    rootdir,_ = os.path.split(os.path.split(os.path.dirname(os.path.realpath(__file__)))[0])
+    sys.path.insert(0,rootdir)
 except IndexError:
     sys.exit("Provide folder path to API (containing config file)")
 
 import config, biothings
-from utils.versions import set_versions
+from biothings.utils.version import set_versions
 
 # fill app & autohub versions
 standalone_folder,_bin = os.path.split(os.path.dirname(os.path.realpath(__file__)))
 assert _bin == "bin", "Expecting 'bin' to be part of launch script path"
 app_folder,_src = os.path.split(os.path.abspath(apipath))
 assert _src == "src", "Expecting 'src' to be part of app path"
-set_versions(config,standalone_folder,app_folder)
+set_versions(config,app_folder)
 
 biothings.config_for_app(config)
 
 logging.info("Hub DB backend: %s" % biothings.config.HUB_DB_BACKEND)
 logging.info("Hub database: %s" % biothings.config.DATA_HUB_DB_DATABASE)
 
-from hub import AutoHubServer
+from standalone.hub import AutoHubServer
 
 s3_folders = config.BIOTHINGS_S3_FOLDER.split(",")
 server = AutoHubServer(s3_folders,source_list=None,name="Auto-hub",
