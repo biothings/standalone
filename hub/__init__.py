@@ -90,11 +90,10 @@ class AutoHubServer(HubServer):
             # dumper
             self.managers["dump_manager"].register_classes([dumper_klass])
             # dump commands
-            cmdsuffix = suffix.replace("demo_","")
-            self.commands["versions%s" % cmdsuffix] = partial(self.managers["dump_manager"].call,"biothings%s" % suffix,"versions")
-            self.commands["check%s" % cmdsuffix] = partial(self.managers["dump_manager"].dump_src,"biothings%s" % suffix,check_only=True)
-            self.commands["info%s" % cmdsuffix] = partial(self.managers["dump_manager"].call,"biothings%s" % suffix,"info")
-            self.commands["download%s" % cmdsuffix] = partial(self.managers["dump_manager"].dump_src,"biothings%s" % suffix)
+            self.commands["versions"] = partial(self.managers["dump_manager"].call,method_name="versions")
+            self.commands["check"] = partial(self.managers["dump_manager"].dump_src,check_only=True)
+            self.commands["info"] = partial(self.managers["dump_manager"].call,method_name="info")
+            self.commands["download"] = partial(self.managers["dump_manager"].dump_src)
         
             # uploader
             # syncer will work on index used in web part
@@ -111,7 +110,6 @@ class AutoHubServer(HubServer):
             sys.modules["standalone.hub"].__dict__["%sUploader" % suffix] = uploader_klass
             self.managers["upload_manager"].register_classes([uploader_klass])
             # upload commands
-            self.commands["apply%s" % cmdsuffix] = partial(self.managers["upload_manager"].upload_src,"biothings%s" % suffix)
-            self.commands["step_update%s" % cmdsuffix] = CompositeCommand("download%s() && apply%s()" % (cmdsuffix,cmdsuffix))
-            self.commands["update%s" % cmdsuffix] = partial(self.cycle_update,"biothings%s" % suffix)
+            self.commands["apply"] = partial(self.managers["upload_manager"].upload_src)
+            self.commands["update"] = partial(self.cycle_update)
 
