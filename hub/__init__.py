@@ -5,22 +5,21 @@ import asyncio
 
 from biothings import config as btconfig
 
-from biothings.hub.autoupdate.dumper import LATEST
 from biothings.hub.autoupdate import BiothingsDumper, BiothingsUploader
 from biothings.utils.es import ESIndexer
 from biothings.utils.backend import DocESBackend
-from biothings.utils.hub import CompositeCommand
+from biothings.utils.hub import CommandDefinition
 from biothings.hub import HubServer
 
 class AutoHubServer(HubServer):
 
-    DEFAULT_FEATURES = ["job","dump","upload","sync","terminal","ws"]
+    DEFAULT_FEATURES = ["job","autohub","terminal","config","ws"]
 
-    def __init__(self, s3_folders, *args, **kwargs):
+    def __init__(self, version_urls, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.s3_folders = s3_folders
+        self.version_urls = version_urls 
 
-    def cycle_update(self, src_name, version=LATEST, max_cycles=10):
+    def cycle_update(self, src_name, version="latest", max_cycles=10):
         """
         Update hub's data up to the given version (default is latest available),
         using full and incremental updates to get up to that given version (if possible).
@@ -60,56 +59,68 @@ class AutoHubServer(HubServer):
     
         return asyncio.ensure_future(do(version))
 
+    def get_folder_name(self,url):
+        return os.path.basename(os.path.dirname(url))
 
-    def configure_commands(self):
-        assert self.managers, "No managers configured"
-        self.commands = OrderedDict()
-        for s3_folder in self.s3_folders:
-        
-            BiothingsDumper.BIOTHINGS_S3_FOLDER = s3_folder
-            suffix = ""
-            if len(self.s3_folders) > 1:
-                # it's biothings API with more than 1 index, meaning they are suffixed.
-                # as a convention, use the s3_folder's suffix to complete index name
-                # TODO: really ? maybe be more explicit ??
-                suffix = "_%s" % s3_folder.split("-")[-1]
-            pidxr = partial(ESIndexer,index=btconfig.ES_INDEX_NAME + suffix,
+    def get_class_name(self, folder):
+        """Return class-compliant name from a folder name"""
+        return folder.replace(".","_").replace("-","_")
+
+    def list_biothings(self):
+        return [self.get_folder_name(url) for url in self.version_urls]
+
+    def configure_autohub_feature(self):
+        # "autohub" feature is based on "dump","upload" and "sync" features.
+        # we don't list them in DEFAULT_FEATURES as we don't want them to produce
+        # commands such as dump() or upload() as these are renamed for clarity
+        self.configure_dump_manager()
+        self.configure_upload_manager()
+        self.configure_sync_manager()
+        for version_url in self.version_urls:
+            BiothingsDumper.VERSION_URL = version_url
+            pidxr = partial(ESIndexer,index=btconfig.ES_INDEX_NAME,
                             doc_type=btconfig.ES_DOC_TYPE,es_host=btconfig.ES_HOST)
             partial_backend = partial(DocESBackend,pidxr)
         
-            SRC_NAME = BiothingsDumper.SRC_NAME + suffix
-            dumper_klass = type("%sDumper" % suffix,(BiothingsDumper,),
+            SRC_NAME = self.get_folder_name(version_url)
+            dump_class_name = "%sDumper" % self.get_class_name(SRC_NAME)
+            # dumper
+            dumper_klass = type(dump_class_name,(BiothingsDumper,),
                     {"TARGET_BACKEND" : partial_backend,
-                     "SRC_NAME" : BiothingsDumper.SRC_NAME + suffix,
+                     "SRC_NAME" : SRC_NAME,
                      "SRC_ROOT_FOLDER" : os.path.join(btconfig.DATA_ARCHIVE_ROOT, SRC_NAME),
-                     "BIOTHINGS_S3_FOLDER" : s3_folder,
+                     "VERSION_URL" : version_url,
                      "AWS_ACCESS_KEY_ID" : btconfig.STANDALONE_AWS_CREDENTIALS.get("AWS_ACCESS_KEY_ID"),
                      "AWS_SECRET_ACCESS_KEY" : btconfig.STANDALONE_AWS_CREDENTIALS.get("AWS_SECRET_ACCESS_KEY")
                      })
-            sys.modules["standalone.hub"].__dict__["%sDumper" % suffix] = dumper_klass
-            # dumper
+            sys.modules["standalone.hub"].__dict__[dump_class_name] = dumper_klass
             self.managers["dump_manager"].register_classes([dumper_klass])
-            # dump commands
-            self.commands["versions"] = partial(self.managers["dump_manager"].call,method_name="versions")
-            self.commands["check"] = partial(self.managers["dump_manager"].dump_src,check_only=True)
-            self.commands["info"] = partial(self.managers["dump_manager"].call,method_name="info")
-            self.commands["download"] = partial(self.managers["dump_manager"].dump_src)
-        
+
             # uploader
             # syncer will work on index used in web part
-            esb = (btconfig.ES_HOST, btconfig.ES_INDEX_NAME + suffix, btconfig.ES_DOC_TYPE)
+            esb = (btconfig.ES_HOST, btconfig.ES_INDEX_NAME, btconfig.ES_DOC_TYPE)
             partial_syncer = partial(self.managers["sync_manager"].sync,"es",target_backend=esb)
             # manually register biothings source uploader
             # this uploader will use dumped data to update an ES index
-            uploader_klass = type("%sUploader" % suffix,(BiothingsUploader,),
+            uploader_class_name = "%sUploader" % self.get_class_name(SRC_NAME)
+            uploader_klass = type(uploader_class_name,(BiothingsUploader,),
                     {"TARGET_BACKEND" : partial_backend,
                      "SYNCER_FUNC" : partial_syncer,
                      "AUTO_PURGE_INDEX" : True, # because we believe
-                     "name" : BiothingsUploader.name + suffix,
+                     "name" : SRC_NAME
                     })
-            sys.modules["standalone.hub"].__dict__["%sUploader" % suffix] = uploader_klass
+            sys.modules["standalone.hub"].__dict__[uploader_class_name] = uploader_klass
             self.managers["upload_manager"].register_classes([uploader_klass])
-            # upload commands
-            self.commands["apply"] = partial(self.managers["upload_manager"].upload_src)
-            self.commands["update"] = partial(self.cycle_update)
+
+        # dump commands
+        self.commands["versions"] = partial(self.managers["dump_manager"].call,method_name="versions")
+        self.commands["check"] = partial(self.managers["dump_manager"].dump_src,check_only=True)
+        self.commands["info"] = partial(self.managers["dump_manager"].call,method_name="info")
+        self.commands["download"] = partial(self.managers["dump_manager"].dump_src)
+
+        # upload commands
+        self.commands["apply"] = partial(self.managers["upload_manager"].upload_src)
+        self.commands["update"] = partial(self.cycle_update)
+        
+        self.commands["list"] = CommandDefinition(command=self.list_biothings,tracked=False)
 

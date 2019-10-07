@@ -30,6 +30,7 @@ except IndexError:
 
 import config, biothings
 from biothings.utils.version import set_versions
+from utils.version import set_standalone_version
 
 # fill app & autohub versions
 standalone_folder,_bin = os.path.split(os.path.dirname(os.path.realpath(__file__)))
@@ -37,16 +38,16 @@ assert _bin == "bin", "Expecting 'bin' to be part of launch script path"
 app_folder,_src = os.path.split(os.path.abspath(apipath))
 assert _src == "src", "Expecting 'src' to be part of app path"
 set_versions(config,app_folder)
-
+set_standalone_version(config,standalone_folder)
 biothings.config_for_app(config)
-
-logging.info("Hub DB backend: %s" % biothings.config.HUB_DB_BACKEND)
-logging.info("Hub database: %s" % biothings.config.DATA_HUB_DB_DATABASE)
+# now use biothings' config wrapper
+config = biothings.config
+logging.info("Hub DB backend: %s" % config.HUB_DB_BACKEND)
+logging.info("Hub database: %s" % config.DATA_HUB_DB_DATABASE)
 
 from standalone.hub import AutoHubServer
 
-s3_folders = config.BIOTHINGS_S3_FOLDER.split(",")
-server = AutoHubServer(s3_folders,source_list=None,name="Auto-hub",
+server = AutoHubServer(config.VERSION_URLS,source_list=None,name="Auto-hub",
                        api_config=None,dataupload_config=False,websocket_config=False)
 
 
