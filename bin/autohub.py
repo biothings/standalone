@@ -11,10 +11,11 @@ concurrent.futures.process.multiprocessing = multiprocessing_on_dill
 import sys, os, logging
 
 # shut some mouths...
+import botocore
 logging.getLogger("elasticsearch").setLevel(logging.ERROR)
 logging.getLogger("urllib3").setLevel(logging.ERROR)
 logging.getLogger("requests").setLevel(logging.ERROR)
-import botocore
+logging.getLogger("tornado").setLevel(logging.ERROR)
 logging.getLogger("botocore").setLevel(logging.ERROR)
 
 try:
