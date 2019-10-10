@@ -15,6 +15,9 @@ class AutoHubServer(HubServer):
 
     DEFAULT_FEATURES = ["job","autohub","terminal","config","ws"]
 
+    DEFAULT_DUMPER_CLASS = BiothingsDumper
+    DEFAULT_UPLOADER_CLASS = BiothingsUploader
+
     def __init__(self, version_urls, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.version_urls = version_urls 
@@ -77,7 +80,7 @@ class AutoHubServer(HubServer):
         self.configure_upload_manager()
         self.configure_sync_manager()
         for version_url in self.version_urls:
-            BiothingsDumper.VERSION_URL = version_url
+            self.__class__.DEFAULT_DUMPER_CLASS.VERSION_URL = version_url
             pidxr = partial(ESIndexer,index=btconfig.ES_INDEX_NAME,
                             doc_type=btconfig.ES_DOC_TYPE,es_host=btconfig.ES_HOST)
             partial_backend = partial(DocESBackend,pidxr)
@@ -85,7 +88,7 @@ class AutoHubServer(HubServer):
             SRC_NAME = self.get_folder_name(version_url)
             dump_class_name = "%sDumper" % self.get_class_name(SRC_NAME)
             # dumper
-            dumper_klass = type(dump_class_name,(BiothingsDumper,),
+            dumper_klass = type(dump_class_name,(self.__class__.DEFAULT_DUMPER_CLASS,),
                     {"TARGET_BACKEND" : partial_backend,
                      "SRC_NAME" : SRC_NAME,
                      "SRC_ROOT_FOLDER" : os.path.join(btconfig.DATA_ARCHIVE_ROOT, SRC_NAME),
@@ -103,7 +106,7 @@ class AutoHubServer(HubServer):
             # manually register biothings source uploader
             # this uploader will use dumped data to update an ES index
             uploader_class_name = "%sUploader" % self.get_class_name(SRC_NAME)
-            uploader_klass = type(uploader_class_name,(BiothingsUploader,),
+            uploader_klass = type(uploader_class_name,(self.__class__.DEFAULT_UPLOADER_CLASS,),
                     {"TARGET_BACKEND" : partial_backend,
                      "SYNCER_FUNC" : partial_syncer,
                      "AUTO_PURGE_INDEX" : True, # because we believe
