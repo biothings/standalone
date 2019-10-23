@@ -33,7 +33,7 @@ class AutoHubServer(HubServer):
 
         return vurls
 
-    def install(self, src_name, version="latest", dry=False):
+    def install(self, src_name, version="latest", dry=False, force=False):
         """
         Update hub's data up to the given version (default is latest available),
         using full and incremental updates to get up to that given version (if possible).
@@ -54,7 +54,7 @@ class AutoHubServer(HubServer):
 
             for step_version in version_path:
                 logging.info("Downloading data for version '%s'" % step_version)
-                jobs = self.managers["dump_manager"].dump_src(src_name,version=step_version)
+                jobs = self.managers["dump_manager"].dump_src(src_name,version=step_version,force=force)
                 download = asyncio.gather(*jobs)
                 res = yield from download
                 assert len(res) == 1
