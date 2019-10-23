@@ -33,44 +33,38 @@ class AutoHubServer(HubServer):
 
         return vurls
 
-    def cycle_update(self, src_name, version="latest", max_cycles=10):
+    def install(self, src_name, version="latest", dry=False):
         """
         Update hub's data up to the given version (default is latest available),
         using full and incremental updates to get up to that given version (if possible).
-        To prevent any infinite loop that could occur (eg. network issues), a max of
-        max_cycles will be considered to bring the hub up-to-date.
         """
         @asyncio.coroutine
         def do(version):
-            cycle = True
-            count = 0
-            while cycle:
-                jobs = self.managers["dump_manager"].dump_src(src_name,version=version,check_only=True)
-                check = asyncio.gather(*jobs)
-                res = yield from check
+            dklass = self.managers["dump_manager"][src_name][0] # only one dumper allowed / source
+            dobj = self.managers["dump_manager"].create_instance(dklass)
+            update_path = dobj.find_update_path(version,backend_version=dobj.target_backend.version)
+            version_path = [v["build_version"] for v in update_path]
+            if not version_path:
+                logging.info("No update path found")
+                return
+
+            logging.info("Found path for updating from version '%s' to version '%s': %s" % (dobj.target_backend.version,version,version_path))
+            if dry:
+                return version_path
+
+            for step_version in version_path:
+                logging.info("Downloading data for version '%s'" % step_version)
+                jobs = self.managers["dump_manager"].dump_src(src_name,version=step_version)
+                download = asyncio.gather(*jobs)
+                res = yield from download
                 assert len(res) == 1
-                if res[0] == "Nothing to dump":
-                    cycle = False
-                else:
-                    remote_version = res[0]
-                    jobs = self.managers["dump_manager"].dump_src(src_name,version=remote_version)
-                    download = asyncio.gather(*jobs)
-                    res = yield from download
-                    assert len(res) == 1
-                    if res[0] == None:
-                        # download ready, now update
-                        jobs = self.managers["upload_manager"].upload_src(src_name)
-                        upload = asyncio.gather(*jobs)
-                        res = yield from upload
-                    else:
-                        assert res[0] == "Nothing to dump"
-                        cycle = False
-                count += 1
-                if count >= max_cycles:
-                    logging.warning("Reach max updating cycle (%s), now aborting process. " % count + \
-                                    "You may want to run another cycle to make sure biothings data is up-to-date")
-                    cycle = False
-    
+                if res[0] == None:
+                    # download ready, now install
+                    logging.info("Updating backend to version '%s'" % step_version)
+                    jobs = self.managers["upload_manager"].upload_src(src_name)
+                    upload = asyncio.gather(*jobs)
+                    res = yield from upload
+
         return asyncio.ensure_future(do(version))
 
     def get_folder_name(self,url):
@@ -138,7 +132,7 @@ class AutoHubServer(HubServer):
         self.commands["download"] = partial(self.managers["dump_manager"].dump_src)
         # upload commands
         self.commands["apply"] = partial(self.managers["upload_manager"].upload_src)
-        self.commands["update"] = partial(self.cycle_update)
+        self.commands["install"] = partial(self.install)
         self.commands["backend"] = partial(self.managers["dump_manager"].call,method_name="get_target_backend")
 
     def configure_api_endpoints(self):
@@ -153,5 +147,5 @@ class AutoHubServer(HubServer):
         self.api_endpoints["standalone"].append(EndpointDefinition(name="backend",method="get",suffix="backend"))
         self.api_endpoints["standalone"].append(EndpointDefinition(name="download",method="post",suffix="download"))
         self.api_endpoints["standalone"].append(EndpointDefinition(name="apply",method="post",suffix="apply"))
-        self.api_endpoints["standalone"].append(EndpointDefinition(name="update",method="post",suffix="update"))
+        self.api_endpoints["standalone"].append(EndpointDefinition(name="install",method="post",suffix="install"))
 
