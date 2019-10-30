@@ -40,31 +40,35 @@ class AutoHubServer(HubServer):
         """
         @asyncio.coroutine
         def do(version):
-            dklass = self.managers["dump_manager"][src_name][0] # only one dumper allowed / source
-            dobj = self.managers["dump_manager"].create_instance(dklass)
-            update_path = dobj.find_update_path(version,backend_version=dobj.target_backend.version)
-            version_path = [v["build_version"] for v in update_path]
-            if not version_path:
-                logging.info("No update path found")
-                return
+            try:
+                dklass = self.managers["dump_manager"][src_name][0] # only one dumper allowed / source
+                dobj = self.managers["dump_manager"].create_instance(dklass)
+                update_path = dobj.find_update_path(version,backend_version=dobj.target_backend.version)
+                version_path = [v["build_version"] for v in update_path]
+                if not version_path:
+                    logging.info("No update path found")
+                    return
 
-            logging.info("Found path for updating from version '%s' to version '%s': %s" % (dobj.target_backend.version,version,version_path))
-            if dry:
-                return version_path
+                logging.info("Found path for updating from version '%s' to version '%s': %s" % (dobj.target_backend.version,version,version_path))
+                if dry:
+                    return version_path
 
-            for step_version in version_path:
-                logging.info("Downloading data for version '%s'" % step_version)
-                jobs = self.managers["dump_manager"].dump_src(src_name,version=step_version,force=force)
-                download = asyncio.gather(*jobs)
-                res = yield from download
-                assert len(res) == 1
-                if res[0] == None:
-                    # download ready, now install
-                    logging.info("Updating backend to version '%s'" % step_version)
-                    jobs = self.managers["upload_manager"].upload_src(src_name)
-                    upload = asyncio.gather(*jobs)
-                    res = yield from upload
+                for step_version in version_path:
+                    logging.info("Downloading data for version '%s'" % step_version)
+                    jobs = self.managers["dump_manager"].dump_src(src_name,version=step_version,force=force)
+                    download = asyncio.gather(*jobs)
+                    res = yield from download
+                    assert len(res) == 1
+                    if res[0] == None:
+                        # download ready, now install
+                        logging.info("Updating backend to version '%s'" % step_version)
+                        jobs = self.managers["upload_manager"].upload_src(src_name)
+                        upload = asyncio.gather(*jobs)
+                        res = yield from upload
 
+            except Exception as e:
+                self.logger.exception(e)
+                raise
         return asyncio.ensure_future(do(version))
 
     def get_folder_name(self,url):
