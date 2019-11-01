@@ -138,6 +138,7 @@ class AutoHubServer(HubServer):
         self.commands["apply"] = partial(self.managers["upload_manager"].upload_src)
         self.commands["install"] = partial(self.install)
         self.commands["backend"] = partial(self.managers["dump_manager"].call,method_name="get_target_backend")
+        self.commands["reset_backend"] = partial(self.managers["dump_manager"].call,method_name="reset_target_backend")
 
     def configure_api_endpoints(self):
         super().configure_api_endpoints()
@@ -149,6 +150,7 @@ class AutoHubServer(HubServer):
         self.api_endpoints["standalone"].append(EndpointDefinition(name="check",method="get",suffix="check"))
         self.api_endpoints["standalone"].append(EndpointDefinition(name="info",method="get",suffix="info"))
         self.api_endpoints["standalone"].append(EndpointDefinition(name="backend",method="get",suffix="backend"))
+        self.api_endpoints["standalone"].append(EndpointDefinition(name="reset_backend",method="delete",suffix="backend"))
         self.api_endpoints["standalone"].append(EndpointDefinition(name="download",method="post",suffix="download"))
         self.api_endpoints["standalone"].append(EndpointDefinition(name="apply",method="post",suffix="apply"))
         self.api_endpoints["standalone"].append(EndpointDefinition(name="install",method="post",suffix="install"))
