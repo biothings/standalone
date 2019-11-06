@@ -122,7 +122,7 @@ class AutoHubServer(HubServer):
                 pidxr = self.indexer_factory.create(info["name"])
             else:
                 pidxr = partial(ESIndexer,index=actual_conf["index"],
-                                doc_type=actual_conf["doc_type"],
+                                doc_type=None,
                                 es_host=actual_conf["es_host"])
             partial_backend = partial(DocESBackend,pidxr)
         
@@ -141,7 +141,7 @@ class AutoHubServer(HubServer):
             self.managers["dump_manager"].register_classes([dumper_klass])
             # uploader
             # syncer will work on index used in web part
-            esb = (actual_conf["es_host"], actual_conf["index"], actual_conf["doc_type"])
+            esb = (actual_conf["es_host"], actual_conf["index"], None)
             partial_syncer = partial(self.managers["sync_manager"].sync,"es",target_backend=esb)
             # manually register biothings source uploader
             # this uploader will use dumped data to update an ES index
