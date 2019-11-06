@@ -18,9 +18,31 @@ class AutoHubServer(HubServer):
     DEFAULT_DUMPER_CLASS = BiothingsDumper
     DEFAULT_UPLOADER_CLASS = BiothingsUploader
 
-    def __init__(self, version_urls, *args, **kwargs):
+    def __init__(self, version_urls, indexer_factory=None, *args, **kwargs):
+        """
+        version_urls is a list of URLs pointing to versions.json file. The name
+        of the data release is taken from the URL (http://...s3.amazon.com/<the_name>/versions.json)
+        unless specified as a dict: {"name" : "custom_name", "url" : "http://..."}
+
+        If indexer_factory is passed, it'll be used to create indexer used to dump/check versions
+        currently installed on ES, restore snapshot, index, etc... A indexer_factory is typically
+        used to generate indexer dynamically (ES host, index name, etc...) according to URLs for
+        instance. See standalone.hub.DynamicIndexerFactory class for an example. It is typically
+        used when lots of data releases are being managed by the Hub (so no need to manually update
+        STANDALONE_CONFIG parameter.
+
+        If indexer_factory is None, a config param named STANDALONE_CONFIG is used,
+        format is the following:
+        
+            {"_default" : {"es_host": "...", "index": "...", "doc_type" : "..."},
+             "the_name" : {"es_host": "...", "index": "...", "doc_type" : "..."}}
+
+        When a data release named (from URL) matches an entry, it's used to configured
+        which ES backend to target, otherwise the default one is used.
+        """
         super().__init__(*args, **kwargs)
         self.version_urls = self.extract(version_urls)
+        self.indexer_factory = indexer_factory
 
     def extract(self,urls):
         vurls = []
@@ -90,11 +112,18 @@ class AutoHubServer(HubServer):
         if not self.managers.get("dump_manager"): self.configure_dump_manager()
         if not self.managers.get("upload_manager"): self.configure_upload_manager()
         if not self.managers.get("sync_manager"): self.configure_sync_manager()
+        default_standalone_conf = btconfig.STANDALONE_CONFIG.get("_default")
         for info in self.version_urls:
+            actual_conf = btconfig.STANDALONE_CONFIG.get(info["name"],default_standalone_conf)
+            assert actual_conf, "No standalone config could be found for data release '%s'" % info["name"]
             version_url = info["url"]
             self.__class__.DEFAULT_DUMPER_CLASS.VERSION_URL = version_url
-            pidxr = partial(ESIndexer,index=btconfig.ES_INDEX_NAME,
-                            doc_type=btconfig.ES_DOC_TYPE,es_host=btconfig.ES_HOST)
+            if self.indexer_factory:
+                pidxr = self.indexer_factory.create(info["name"])
+            else:
+                pidxr = partial(ESIndexer,index=actual_conf["index"],
+                                doc_type=actual_conf["doc_type"],
+                                es_host=actual_conf["es_host"])
             partial_backend = partial(DocESBackend,pidxr)
         
             SRC_NAME = info["name"]
@@ -112,7 +141,7 @@ class AutoHubServer(HubServer):
             self.managers["dump_manager"].register_classes([dumper_klass])
             # uploader
             # syncer will work on index used in web part
-            esb = (btconfig.ES_HOST, btconfig.ES_INDEX_NAME, btconfig.ES_DOC_TYPE)
+            esb = (actual_conf["es_host"], actual_conf["index"], actual_conf["doc_type"])
             partial_syncer = partial(self.managers["sync_manager"].sync,"es",target_backend=esb)
             # manually register biothings source uploader
             # this uploader will use dumped data to update an ES index
@@ -154,4 +183,38 @@ class AutoHubServer(HubServer):
         self.api_endpoints["standalone"].append(EndpointDefinition(name="download",method="post",suffix="download"))
         self.api_endpoints["standalone"].append(EndpointDefinition(name="apply",method="post",suffix="apply"))
         self.api_endpoints["standalone"].append(EndpointDefinition(name="install",method="post",suffix="install"))
+
+
+
+class DynamicIndexerFactory(object):
+    """
+    Create indexer with parameters taken from versions.json URL.
+    A list of  URLs is provided so the factory knows how to create these
+    indexers for each URLs. There's no way to "guess" an ES host from a URL,
+    so this parameter must be specified as well, common to all URLs
+    "suffix" param is added at the end of index names.
+    """
+
+    def __init__(self, urls, es_host, suffix="_current"):
+        self.urls = urls
+        self.es_host = es_host
+        self.bynames = {}
+        for url in urls:
+            if isinstance(url,dict):
+                name = url["name"]
+                actual_url = url["url"]
+            else:
+                name = os.path.basename(os.path.dirname(url))
+                actual_url = url
+            self.bynames[name] = {
+                    "es_host" : self.es_host,
+                    "index" : name + suffix
+                    }
+
+    def create(self, name):
+        conf = self.bynames[name]
+        pidxr = partial(ESIndexer,index=conf["index"],
+                                  doc_type=None,
+                                  es_host=conf["es_host"])
+        return pidxr
 
