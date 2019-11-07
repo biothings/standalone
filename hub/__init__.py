@@ -112,15 +112,15 @@ class AutoHubServer(HubServer):
         if not self.managers.get("dump_manager"): self.configure_dump_manager()
         if not self.managers.get("upload_manager"): self.configure_upload_manager()
         if not self.managers.get("sync_manager"): self.configure_sync_manager()
-        default_standalone_conf = btconfig.STANDALONE_CONFIG.get("_default")
+        default_standalone_conf = getattr(btconfig,"STANDALONE_CONFIG",{}).get("_default")
         for info in self.version_urls:
-            actual_conf = btconfig.STANDALONE_CONFIG.get(info["name"],default_standalone_conf)
-            assert actual_conf, "No standalone config could be found for data release '%s'" % info["name"]
             version_url = info["url"]
             self.__class__.DEFAULT_DUMPER_CLASS.VERSION_URL = version_url
             if self.indexer_factory:
-                pidxr = self.indexer_factory.create(info["name"])
+                pidxr, actual_conf = self.indexer_factory.create(info["name"])
             else:
+                actual_conf = btconfig.STANDALONE_CONFIG.get(info["name"],default_standalone_conf)
+                assert actual_conf, "No standalone config could be found for data release '%s'" % info["name"]
                 pidxr = partial(ESIndexer,index=actual_conf["index"],
                                 doc_type=None,
                                 es_host=actual_conf["es_host"])
@@ -216,5 +216,6 @@ class DynamicIndexerFactory(object):
         pidxr = partial(ESIndexer,index=conf["index"],
                                   doc_type=None,
                                   es_host=conf["es_host"])
-        return pidxr
+        conf =  {"es_host" : conf["es_host"], "index" : conf["index"]}
+        return pidxr, conf
 
